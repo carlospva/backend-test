@@ -1,0 +1,121 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: cpena
+
+---
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: backend-test-config
+  namespace: cpena
+data:
+  USERNAME: "cpena"
+
+---
+
+apiVersion: v1
+kind: Secret
+metadata:
+  name: backend-test-secret
+  namespace: cpena
+type: Opaque
+data:
+  # echo -n "carlospenacursodops" | base64
+  API_KEY: Y2FybG9zcGVuYWN1cnNvZG9wcw==
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: backend-test-deployment
+  namespace: cpena
+  labels:
+    app: backend-test
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: backend-test
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  template:
+    metadata:
+      labels:
+        app: backend-test
+    spec:
+      containers:
+      - name: backend-test
+        image: rhcr.io/carlospva/backend-test:latest
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 3000
+          name: http
+          protocol: TCP
+        env:
+        - name: USERNAME
+          valueFrom:
+            configMapKeyRef:
+              name: backend-test-config
+              key: USERNAME
+        - name: API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: backend-test-secret
+              key: API_KEY
+        - name: NODE_ENV
+          value: "production"
+        - name: PORT
+          value: "3000"
+        resources:
+          requests:
+            memory: "128Mi"
+            cpu: "100m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+        livenessProbe:
+          httpGet:
+            path: /
+            port: 3000
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /
+            port: 3000
+          initialDelaySeconds: 10
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 3
+        securityContext:
+          runAsNonRoot: true
+          runAsUser: 1001
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: false
+
+---
+# Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: backend-test-service
+  namespace: cpena
+  labels:
+    app: backend-test
+spec:
+  type: LoadBalancer
+  selector:
+    app: backend-test
+  ports:
+  - name: http
+    port: 80
+    targetPort: 3000
+    protocol: TCP
+  sessionAffinity: None
